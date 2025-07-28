@@ -29,8 +29,7 @@ void setup() {
     Serial.println("Unable to sync with the RTC");
   else
     Serial.println("RTC has set the system time");
-
-  // 印出 CSV 標頭列
+  
   Serial.println("Time,Num,X,Y,Z,Magnitude,heading");
   XBee.println("Time,Num,X,Y,Z,Magnitude,heading");
 }
@@ -48,17 +47,14 @@ void loop() {
   char timeBuffer[10];
   sprintf(timeBuffer, "%02d:%02d:%02d", hour(), minute(), second());
 
-  // 四位格式輸出
   char xBuf[6], yBuf[6], zBuf[6];
   formatFourDigit(x, xBuf);
   formatFourDigit(y, yBuf);
   formatFourDigit(z, zBuf);
 
-  // 合成一列 CSV 資料
   String data = String(timeBuffer) + "," + num + "," +
-                String(xBuf) + "," + String(yBuf) + "," + String(zBuf) + "," + mag5+","+heading;
+                String(xBuf) + "," + String(yBuf) + "," + String(zBuf) + "," + magnitude+","+heading;
 
-  // 傳送到 Serial 與 XBee
   Serial.println(data);
   XBee.println(data);
 
@@ -66,14 +62,12 @@ void loop() {
   delay(500);
 }
 
-// 將 int 格式化為四位數（含正負號），存入 char[]
 void formatFourDigit(int val, char* buffer) {
   char sign = (val >= 0) ? '+' : '-';
   val = abs(val);
-  sprintf(buffer, "%c%04d", sign, val);  // 例如 +0123, -0456
+  sprintf(buffer, "%c%04d", sign, val);  
 }
 
-// 找出最接近的 5 的倍數
 int find_nearest_multiple_of_5(float number) {
   float remainder = fmod(number, 5.0);
   if (remainder == 0.0)
