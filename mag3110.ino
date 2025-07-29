@@ -1,0 +1,89 @@
+#include <SparkFun_MAG3110.h>
+#include <TimeLib.h>
+#include <Wire.h>
+#include <RTClib.h>
+
+MAG3110 mag;
+RTC_DS3231 rtc;
+
+#define XBee Serial1
+
+int x, y, z;
+int num = 0;
+
+time_t getTimeFromRTC() {
+  DateTime now = rtc.now();
+  return now.unixtime();
+}
+
+void setup() {
+  Serial.begin(9600);
+  XBee.begin(9600);
+  Wire.begin();
+
+  mag.initialize();  
+  mag.start();       
+
+  if (!rtc.begin()) {
+    Serial.println("RTC not found!");
+  }
+
+  setSyncProvider(getTimeFromRTC);
+  if (timeStatus() != timeSet)
+    Serial.println("Unable to sync with the RTC");
+  else
+    Serial.println("RTC has set the system time");
+
+  // 印出 CSV 標頭列
+  Serial.println("Time,Num,X,Y,Z,Magnitude,Heading");
+  XBee.println("Time,Num,X,Y,Z,Magnitude,Heading");
+}
+
+void loop() {
+  mag.readMag(&x, &y, &z);  
+
+  float fx = x;
+  float fy = y;
+  float fz = z;
+  float magnitude = sqrt(fx * fx + fy * fy + fz * fz);
+
+  // 計算方位角
+  float heading = atan2(fy, fx) * 180.0 / PI;
+  if (heading < 0) heading += 360.0;
+
+  char timeBuffer[10];
+  sprintf(timeBuffer, "%02d:%02d:%02d", hour(), minute(), second());
+
+
+  char xBuf[6], yBuf[6], zBuf[6];
+  formatFourDigit(x, xBuf);
+  formatFourDigit(y, yBuf);
+  formatFourDigit(z, zBuf);
+
+  
+  String data = String(timeBuffer) + "," + num + "," +
+                String(xBuf) + "," + String(yBuf) + "," + String(zBuf) + "," +
+                String(magnitude, 2) + "," + String(heading, 2);
+
+  Serial.println(data);
+  XBee.println(data);
+
+  num++;
+  delay(500);
+}
+
+void formatFourDigit(int val, char* buffer) {
+  char sign = (val >= 0) ? '+' : '-';
+  val = abs(val);
+  sprintf(buffer, "%c%04d", sign, val); 
+}
+
+int find_nearest_multiple_of_5(float number) {
+  float remainder = fmod(number, 5.0);
+  if (remainder == 0.0)
+    return (int)number;
+  else if (remainder < 2.5)
+    return (int)(number - remainder);
+  else
+    return (int)(number + (5.0 - remainder));
+}
