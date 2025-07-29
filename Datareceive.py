@@ -1,5 +1,5 @@
 import serial
-import serial.tools.list_ports  # 添加這行
+import serial.tools.list_ports  
 import csv
 import queue
 import re
