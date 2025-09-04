@@ -8,11 +8,15 @@ MAG3110 mag;
 RTC_DS3231 rtc;
 
 #define XBee Serial1
-
+long previousTime=0;
+long interval= 300;
 int x, y, z;
 int num = 0;
-bool isRunning = false; // 控制是否開始傳輸資料
-
+bool isRunning = false;
+int px = 0, py = 0, pz = 0;
+float calz=0;
+float calx=0;
+float caly=0;
 time_t getTimeFromRTC() {
   DateTime now = rtc.now();
   return now.unixtime();
@@ -23,7 +27,7 @@ void setup() {
   XBee.begin(9600);
   Wire.begin();
 
-   mag.initialize();
+  mag.initialize();
   if (mag.isCalibrated()) {
     Serial.println("MAG3110 connected.");
   } else {
@@ -41,72 +45,68 @@ void setup() {
 
   Serial.println("Send 'y' to start, 'n' to stop.");
   XBee.println("Send 'y' to start, 'n' to stop.");
-
-  Serial.println("Time,Num,X,Y,Z,Magnitude,heading");
-  XBee.println("Time,Num,X,Y,Z,Magnitude,heading");
+  Serial.println("Time,Num,X,Y,Z,Magnitude,Heading");
+  XBee.println("Time,Num,X,Y,Z,Magnitude,Heading");
 }
 
 void loop() {
-  if (XBee.available()) {
-    char cmd = XBee.read();
-    if (cmd == 'y') {
-      isRunning = true;
-      Serial.println("Start reading...");
-      XBee.println("Start reading...");
-    } else if (cmd == 'n') {
-      isRunning = false;
-      Serial.println("Stop reading...");
-      XBee.println("Stop reading...");
-      while (!XBee.available()) {
-        delay(100);  // 等待下一個指令再恢復
+  unsigned long currentTime=millis();
+  if (millis() - previousTime >= interval) {
+    previousTime += interval; 
+    // 接收啟動或停止命令
+    if (XBee.available()) {
+      char cmd = XBee.read();
+      if (cmd == 'y') {
+        Serial.println("Start reading...");
+        Serial.print("input position");
+        //XBee.println("Input x y z (e.g. 100 200 -300):");
+        // 等待一行輸入
+        while (!XBee.available()) delay(100);
+        String input = XBee.readStringUntil('\n');
+        input.trim();
+
+        // 嘗試解析三個整數
+        int parsed = sscanf(input.c_str(), "%d %d %d", &px, &py, &pz);
+        if (parsed == 3) {
+          //Serial.print("Reference point: ");
+          Serial.print(px); Serial.print(", ");
+          Serial.print(py); Serial.print(", ");
+          Serial.println(pz);
+          //XBee.println("Reference point received.");
+          isRunning=true;
+        } else {
+          //XBee.println("Invalid format. Please send 3 integers like: 100 200 -300");
+          isRunning = false;
+        }
+      } else if (cmd == 'n') {
+        isRunning = false;
+        Serial.println("Stop reading...");
+        XBee.println("Stop reading...");
+        num=0;
+        return;
       }
-      return;
     }
+
+    if (!isRunning) return;
+    mag.readMag(&x, &y, &z);
+    float fx = (x-calx)*0.1;
+    float fy = (y-caly)*0.1;
+    float fz = (z-calz)*0.1;
+
+    float magnitude = sqrt(fx * fx + fy * fy + fz * fz);
+    float heading = atan2(fy, fx) * 180.0 / PI;
+    if (heading < 0) heading += 360.0;
+
+    char timeBuffer[10];
+    sprintf(timeBuffer, "%02d:%02d:%02d", hour(), minute(), second());
+
+    String data = String(timeBuffer) + "," +String(px) + "," +String(py) + "," +String(pz) + "," + num + "," +
+                  String(fx) + "," + String(fy) + "," + String(fz) + "," +
+                  String(magnitude, 2) + "," + String(heading, 2);
+
+    Serial.println(data);
+    XBee.println(data);
+
+    num++;
   }
-
-  if (!isRunning) return;
-  mag.readMag(&x, &y, &z);
-
-  float fx = x;
-  float fy = y;
-  float fz = z;
-  float magnitude = sqrt(fx * fx + fy * fy + fz * fz);
-  float heading = atan2(fy, fx) * 180.0 / PI;
-  if (heading < 0) heading += 360;
-
-  char timeBuffer[10];
-  sprintf(timeBuffer, "%02d:%02d:%02d", hour(), minute(), second());
-
-  char xBuf[6], yBuf[6], zBuf[6];
-  formatFourDigit(x, xBuf);
-  formatFourDigit(y, yBuf);
-  formatFourDigit(z, zBuf);
-
-  String data = String(timeBuffer) + "," + num + "," +
-                String(xBuf) + "," + String(yBuf) + "," + String(zBuf) + "," + magnitude + "," + heading;
-
-  Serial.println(data);
-  XBee.println(data);
-
-  num++;
-  delay(500);
 }
-
-// 將 int 格式化為四位數（含正負號）
-void formatFourDigit(int val, char* buffer) {
-  char sign = (val >= 0) ? '+' : '-';
-  val = abs(val);
-  sprintf(buffer, "%c%04d", sign, val);
-}
-
-// 找出最接近的 5 的倍數
-int find_nearest_multiple_of_5(float number) {
-  float remainder = fmod(number, 5.0);
-  if (remainder == 0.0)
-    return (int)number;
-  else if (remainder < 2.5)
-    return (int)(number - remainder);
-  else
-    return (int)(number + (5.0 - remainder));
-}
-
